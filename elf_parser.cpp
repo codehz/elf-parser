@@ -41,8 +41,8 @@ std::vector<section_t> Elf_parser::get_sections() {
         section.section_offset = shdr[i].sh_offset;
         section.section_size = shdr[i].sh_size;
         section.section_ent_size = shdr[i].sh_entsize;
-        section.section_addr_align = shdr[i].sh_addralign; 
-        
+        section.section_addr_align = shdr[i].sh_addralign;
+
         sections.push_back(section);
     }
     return sections;
@@ -68,7 +68,7 @@ std::vector<segment_t> Elf_parser::get_segments() {
         segment.segment_memsize  = phdr[i].p_memsz;
         segment.segment_flags    = get_segment_flags(phdr[i].p_flags);
         segment.segment_align    = phdr[i].p_align;
-        
+
         segments.push_back(segment);
     }
     return segments;
@@ -101,7 +101,7 @@ std::vector<symbol_t> Elf_parser::get_symbols() {
 
     std::vector<symbol_t> symbols;
     for(auto &sec: secs) {
-        if((sec.section_type != "SHT_SYMTAB") && (sec.section_type != "SHT_DYNSYM"))
+        if(sec.section_type != "SHT_DYNSYM")
             continue;
 
         auto total_syms = sec.section_size / sizeof(Elf64_Sym);
@@ -117,13 +117,15 @@ std::vector<symbol_t> Elf_parser::get_symbols() {
             symbol.symbol_visibility= get_symbol_visibility(syms_data[i].st_other);
             symbol.symbol_index     = get_symbol_index(syms_data[i].st_shndx);
             symbol.symbol_section   = sec.section_name;
-            
+
+            if (symbol.symbol_index.empty()) symbol.symbol_index = secs[syms_data[i].st_shndx].section_name;
+
             if(sec.section_type == "SHT_SYMTAB")
                 symbol.symbol_name = std::string(sh_strtab_p + syms_data[i].st_name);
-            
+
             if(sec.section_type == "SHT_DYNSYM")
                 symbol.symbol_name = std::string(sh_dynstr_p + syms_data[i].st_name);
-            
+
             symbols.push_back(symbol);
         }
     }
@@ -133,7 +135,7 @@ std::vector<symbol_t> Elf_parser::get_symbols() {
 std::vector<relocation_t> Elf_parser::get_relocations() {
     auto secs = get_sections();
     auto syms = get_symbols();
-    
+
     int  plt_entry_size = 0;
     long plt_vma_address = 0;
 
@@ -148,7 +150,7 @@ std::vector<relocation_t> Elf_parser::get_relocations() {
     std::vector<relocation_t> relocations;
     for (auto &sec : secs) {
 
-        if(sec.section_type != "SHT_RELA") 
+        if(sec.section_type != "SHT_RELA")
             continue;
 
         auto total_relas = sec.section_size / sizeof(Elf64_Rela);
@@ -160,16 +162,16 @@ std::vector<relocation_t> Elf_parser::get_relocations() {
             rel.relocation_info   = static_cast<std::intptr_t>(relas_data[i].r_info);
             rel.relocation_type   = \
                 get_relocation_type(relas_data[i].r_info);
-            
+
             rel.relocation_symbol_value = \
                 get_rel_symbol_value(relas_data[i].r_info, syms);
-            
+
             rel.relocation_symbol_name  = \
                 get_rel_symbol_name(relas_data[i].r_info, syms);
-            
+
             rel.relocation_plt_address = plt_vma_address + (i + 1) * plt_entry_size;
             rel.relocation_section_name = sec.section_name;
-            
+
             relocations.push_back(rel);
         }
     }
@@ -228,7 +230,7 @@ std::string Elf_parser::get_section_type(int tt) {
 
 std::string Elf_parser::get_segment_type(uint32_t &seg_type) {
     switch(seg_type) {
-        case PT_NULL:   return "NULL";                  /* Program header table entry unused */ 
+        case PT_NULL:   return "NULL";                  /* Program header table entry unused */
         case PT_LOAD: return "LOAD";                    /* Loadable program segment */
         case PT_DYNAMIC: return "DYNAMIC";              /* Dynamic linking information */
         case PT_INTERP: return "INTERP";                /* Program interpreter */
@@ -311,7 +313,7 @@ std::string Elf_parser::get_symbol_index(uint16_t &sym_idx) {
         case SHN_COMMON: return "COM";
         case SHN_UNDEF: return "UND";
         case SHN_XINDEX: return "COM";
-        default: return std::to_string(sym_idx);
+        default: return "";
     }
 }
 
@@ -328,7 +330,7 @@ std::string Elf_parser::get_relocation_type(uint64_t &rela_type) {
 
 std::intptr_t Elf_parser::get_rel_symbol_value(
                 uint64_t &sym_idx, std::vector<symbol_t> &syms) {
-    
+
     std::intptr_t sym_val = 0;
     for(auto &sym: syms) {
         if(sym.symbol_num == ELF64_R_SYM(sym_idx)) {
